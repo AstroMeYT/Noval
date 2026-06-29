@@ -18,7 +18,7 @@ To use Noval in the web, you can go to [this page](https://AstroMeYT.github.io/N
 
 ## Contribution
 
-If you wish to make changes to the code, feel free to do so! Create a pull request after you have verified these check:
+If you wish to make changes to the code, feel free to do so! Create a pull request after you have verified these checks:
 
 - The code compiles successfully without any visual or functional errors.
 - If the code makes changes to the UI, please make sure it follows the same design as the current version.
