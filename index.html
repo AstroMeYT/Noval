@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noval - Local Knowledge Base</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Vis-Network for the Graph/Spiderweb view -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-900, #1f2937); }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+        
+        /* Graph & Editor outlines */
+        #graph-container canvas { outline: none; }
+        #editor:focus { outline: none; }
+
+        /* Rich Text Editor specifics */
+        #editor {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        #editor h1 { font-size: 40px; font-weight: bold; margin-bottom: 0.5em; line-height: 1.2; }
+        #editor h2 { font-size: 35px; font-weight: bold; margin-bottom: 0.5em; line-height: 1.2; }
+        #editor ul { list-style-type: disc; padding-left: 2rem; margin-bottom: 1em; }
+        #editor ol { list-style-type: decimal; padding-left: 2rem; margin-bottom: 1em; }
+        #editor a { color: #60a5fa; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; transition: color 0.2s; }
+        #editor a:hover { color: #93c5fd; }
+        
+        /* Disabled toolbar look */
+        .toolbar-disabled { opacity: 0.4; pointer-events: none; }
+
+        /* --- THEME SYSTEM --- */
+        :root[data-theme="light"] {
+            --bg-900: #f9fafb; --bg-800: #ffffff; --bg-700: #f3f4f6; --border-color: #e5e7eb;
+            --text-100: #111827; --text-300: #374151; --text-400: #4b5563; --text-500: #6b7280;
+            --graph-node-bg: #93c5fd; --graph-node-border: #3b82f6; --graph-text: #111827;
+            --graph-ghost-bg: #e5e7eb; --graph-ghost-text: #6b7280;
+        }
+        :root[data-theme="sepia"] {
+            --bg-900: #f4ecd8; --bg-800: #fdf6e3; --bg-700: #e6d5b8; --border-color: #d5c4a1;
+            --text-100: #4a3e2e; --text-300: #5c4b37; --text-400: #7a6a55; --text-500: #928374;
+            --graph-node-bg: #fcb97d; --graph-node-border: #d97736; --graph-text: #4a3e2e;
+            --graph-ghost-bg: #e6d5b8; --graph-ghost-text: #928374;
+        }
+
+        /* Override Tailwind gray colors when a theme is active */
+        [data-theme]:not([data-theme="dark"]) .bg-gray-900, [data-theme]:not([data-theme="dark"]) .bg-gray-950 { background-color: var(--bg-900) !important; }
+        [data-theme]:not([data-theme="dark"]) .bg-gray-800 { background-color: var(--bg-800) !important; }
+        [data-theme]:not([data-theme="dark"]) .bg-gray-700 { background-color: var(--bg-700) !important; }
+        [data-theme]:not([data-theme="dark"]) .hover\:bg-gray-800:hover { background-color: var(--bg-800) !important; }
+        [data-theme]:not([data-theme="dark"]) .hover\:bg-gray-700:hover { background-color: var(--bg-700) !important; }
+        [data-theme]:not([data-theme="dark"]) .border-gray-700, [data-theme]:not([data-theme="dark"]) .border-gray-600 { border-color: var(--border-color) !important; }
+        [data-theme]:not([data-theme="dark"]) .focus\:border-gray-600:focus { border-color: var(--text-400) !important; }
+        [data-theme]:not([data-theme="dark"]) .text-gray-100, [data-theme]:not([data-theme="dark"]) .text-white, [data-theme]:not([data-theme="dark"]) .text-gray-200 { color: var(--text-100) !important; }
+        [data-theme]:not([data-theme="dark"]) .text-gray-300 { color: var(--text-300) !important; }
+        [data-theme]:not([data-theme="dark"]) .text-gray-400 { color: var(--text-400) !important; }
+        [data-theme]:not([data-theme="dark"]) .text-gray-500 { color: var(--text-500) !important; }
+        
+        [data-theme]:not([data-theme="dark"]) #editor a { color: #2563eb; }
+        [data-theme]:not([data-theme="dark"]) #editor a:hover { color: #1d4ed8; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 h-screen w-screen overflow-hidden flex font-sans">
+
+    <!-- Mobile Sidebar Toggle -->
+    <button id="mobile-menu-btn" onclick="toggleSidebar()" class="md:hidden fixed top-4 left-4 z-50 p-2 bg-gray-800 rounded-md shadow-lg border border-gray-700 hover:bg-gray-700">
+        <svg class="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+    </button>
+
+    <!-- Sidebar (List of Notes) -->
+    <aside id="sidebar" class="w-64 bg-gray-800 border-r border-gray-700 flex flex-col absolute md:relative z-40 h-full transform -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out">
+        <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800 pt-16 md:pt-4">
+            <h1 class="text-xl font-bold text-gray-100 tracking-wider">NOVAL</h1>
+            <div class="flex gap-1">
+                <button onclick="createNewFolder()" class="p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-200 transition-colors" title="New Folder">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10.5v6m3-3H9m4.06-7.19-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"></path></svg>
+                </button>
+                <button onclick="createNewNote()" class="p-1.5 bg-blue-600 hover:bg-blue-500 rounded text-white transition-colors" title="New Note">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                </button>
+            </div>
+        </div>
+        
+        <div class="p-3">
+            <div class="relative">
+                <input type="text" id="search-input" onkeyup="filterNotes()" placeholder="Search notes..." class="w-full bg-gray-900 text-sm text-gray-200 border border-gray-700 rounded-md py-2 px-3 focus:outline-none focus:border-blue-500 transition-colors">
+            </div>
+        </div>
+
+        <ul id="notes-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+            <!-- Notes will be injected here -->
+        </ul>
+        
+        <div class="p-4 text-xs text-gray-500 border-t border-gray-700 text-center">
+            JSON format saved locally
+        </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex flex-col h-full bg-gray-900 relative">
+        
+        <!-- Top Toolbar -->
+        <header class="h-14 border-b border-gray-700 flex items-center justify-between px-4 lg:px-6 pl-16 md:pl-6 bg-gray-900 z-10">
+            <div class="flex-1 max-w-2xl flex items-center gap-3">
+                <select id="note-folder-select" onchange="triggerSave()" class="hidden md:block bg-gray-800 text-gray-300 text-xs rounded border border-gray-700 px-2 py-1.5 max-w-[120px] focus:outline-none truncate cursor-pointer" title="Folder">
+                    <option value="">No Folder</option>
+                </select>
+                <input type="text" id="note-title" oninput="triggerSave()" placeholder="Note Title" class="w-full bg-transparent text-xl font-semibold text-gray-100 placeholder-gray-600 focus:outline-none border-b border-transparent focus:border-gray-600 px-1 py-1">
+            </div>
+            
+            <div class="flex items-center space-x-2 ml-4">
+                <div class="flex bg-gray-800 rounded-md p-1 border border-gray-700">
+                    <button id="btn-edit" onclick="switchView('edit')" class="px-3 py-1.5 text-sm rounded-md bg-gray-700 text-gray-100 font-medium transition-colors">Docs</button>
+                    <button id="btn-graph" onclick="switchView('graph')" class="px-3 py-1.5 text-sm rounded-md text-gray-400 hover:text-gray-200 transition-colors flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                        Graph
+                    </button>
+                </div>
+                
+                <button onclick="deleteCurrentNote()" class="p-2 text-gray-500 hover:text-red-400 transition-colors rounded-md hover:bg-gray-800" title="Delete Note">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+
+                <!-- Dropdown Menu -->
+                <div class="relative ml-1">
+                    <button id="menu-btn" onclick="toggleMenu()" class="p-2 text-gray-500 hover:text-white transition-colors rounded-md hover:bg-gray-800" title="Menu">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path></svg>
+                    </button>
+                    <div id="dropdown-menu" class="hidden absolute right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-xl border border-gray-700 z-50">
+                        <a href="#" onclick="openModal('modal-how-to')" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-t-md">How to Use</a>
+                        <a href="#" onclick="openModal('modal-settings')" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Settings</a>
+                        <div class="border-t border-gray-700 my-1"></div>
+                        <a href="#" onclick="openModal('modal-about')" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white rounded-b-md">About</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Areas -->
+        <div class="flex-1 overflow-hidden relative">
+            
+            <!-- Editor View -->
+            <div id="view-edit" class="absolute inset-0 h-full w-full flex flex-col bg-gray-900">
+                
+                <!-- Rich Text Formatting Toolbar -->
+                <div class="h-12 bg-gray-800 border-b border-gray-700 flex justify-between items-center px-4 overflow-x-auto shrink-0">
+                    
+                    <div id="formatting-tools" class="flex gap-2 items-center text-gray-300 select-none transition-opacity">
+                        <!-- Font Family -->
+                        <select id="toolbar-fontName" onchange="formatDoc('fontName', this.value)" class="bg-gray-900 text-xs border border-gray-600 rounded px-2 py-1 cursor-pointer">
+                            <option value="Arial">Arial</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Courier New">Courier</option>
+                            <option value="Times New Roman">Times</option>
+                            <option value="Verdana">Verdana</option>
+                        </select>
+
+                        <!-- Px Font Size -->
+                        <select id="toolbar-fontSize" onchange="formatFontSizePx(this.value)" class="bg-gray-900 text-xs border border-gray-600 rounded px-2 py-1 cursor-pointer">
+                            <option value="12px">12px</option>
+                            <option value="14px">14px</option>
+                            <option value="16px">16px</option>
+                            <option value="18px" selected>18px (Normal)</option>
+                            <option value="20px">20px</option>
+                            <option value="24px">24px</option>
+                            <option value="32px">32px</option>
+                        </select>
+
+                        <!-- Color -->
+                        <div class="flex items-center gap-1 bg-gray-900 px-1 py-0.5 rounded border border-gray-600 cursor-pointer overflow-hidden" title="Text Color">
+                            <input type="color" id="toolbar-foreColor" onchange="formatDoc('foreColor', this.value)" class="w-6 h-6 border-0 bg-transparent p-0 cursor-pointer">
+                        </div>
+
+                        <div class="w-px h-6 bg-gray-600 mx-1"></div>
+
+                        <!-- Styling Buttons -->
+                        <button id="toolbar-bold" onclick="formatDoc('bold')" class="p-1.5 hover:bg-gray-700 hover:text-white rounded transition-colors flex items-center justify-center min-w-[30px]" title="Bold"><span class="font-bold font-serif">B</span></button>
+                        <button id="toolbar-italic" onclick="formatDoc('italic')" class="p-1.5 hover:bg-gray-700 hover:text-white rounded transition-colors flex items-center justify-center min-w-[30px]" title="Italic"><span class="italic font-serif">I</span></button>
+                        <button id="toolbar-underline" onclick="formatDoc('underline')" class="p-1.5 hover:bg-gray-700 hover:text-white rounded transition-colors flex items-center justify-center min-w-[30px]" title="Underline"><span class="underline font-serif">U</span></button>
+                        <button id="toolbar-strikeThrough" onclick="formatDoc('strikeThrough')" class="p-1.5 hover:bg-gray-700 hover:text-white rounded transition-colors flex items-center justify-center min-w-[30px]" title="Strikethrough"><span class="line-through font-serif text-sm">S</span></button>
+                        
+                        <div class="w-px h-6 bg-gray-600 mx-1"></div>
+                        
+                        <!-- Lists -->
+                        <button onclick="formatDoc('insertUnorderedList')" class="p-1.5 hover:bg-gray-700 hover:text-white rounded transition-colors flex items-center justify-center min-w-[30px]" title="Bullet List">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"></path></svg>
+                        </button>
+                        <button onclick="formatDoc('insertOrderedList')" class="p-1.5 hover:bg-gray-700 hover:text-white rounded transition-colors flex items-center justify-center min-w-[30px]" title="Numbered List">
+                            <span class="font-bold text-xs">1.</span>
+                        </button>
+
+                        <div class="w-px h-6 bg-gray-600 mx-1"></div>
+
+                        <button onclick="formatDoc('formatBlock', 'H1')" class="p-1.5 hover:bg-gray-700 hover:text-white rounded transition-colors flex items-center justify-center min-w-[30px]" title="Heading 1"><span class="font-bold text-xs">H1</span></button>
+                        <button onclick="formatDoc('formatBlock', 'H2')" class="p-1.5 hover:bg-gray-700 hover:text-white rounded transition-colors flex items-center justify-center min-w-[30px]" title="Heading 2"><span class="font-bold text-xs">H2</span></button>
+                    </div>
+
+                    <!-- Editor Mode Selector -->
+                    <div class="ml-auto pl-4 border-l border-gray-700 flex items-center">
+                        <select id="editor-mode-select" onchange="toggleEditorMode(this.value)" class="bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded px-3 py-1.5 cursor-pointer outline-none border-none transition-colors shadow-sm appearance-none pr-8 relative" style="background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right .7rem top 50%; background-size: .65rem auto;">
+                            <option value="edit">✎ Edit Mode</option>
+                            <option value="view">👁 View Mode</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="relative flex-1 w-full flex flex-col min-h-0 overflow-hidden">
+                    <!-- The new Rich Text ContentEditable Div -->
+                    <div id="editor" contenteditable="true" oninput="handleEditorInput()" onclick="handleEditorClick(event)" class="flex-1 w-full h-full bg-gray-900 text-gray-300 p-6 md:p-10 overflow-y-auto text-[18px] leading-relaxed cursor-text focus:outline-none" placeholder="Start writing here... Type [[ to link notes."></div>
+                    
+                    <!-- Autocomplete Menu -->
+                    <ul id="autocomplete-menu" class="hidden absolute z-50 bg-gray-800 border border-gray-600 rounded-md shadow-2xl max-h-48 overflow-y-auto text-sm w-64 list-none p-0 m-0 text-gray-200"></ul>
+
+                    <!-- Hover Link Tooltip (Edit Mode) -->
+                    <div id="link-tooltip" class="hidden absolute z-50 bg-gray-800 border border-gray-600 rounded-md shadow-xl p-2 flex items-center gap-3 transform -translate-y-full mt-[-8px]">
+                        <span id="link-tooltip-title" class="text-gray-300 text-sm font-semibold max-w-[150px] truncate"></span>
+                        <div class="flex gap-1">
+                            <button onclick="navigateTooltipLink()" class="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition">Go</button>
+                            <button onclick="unlinkTooltipLink()" class="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded transition">Unlink</button>
+                        </div>
+                    </div>
+
+                    <!-- Right Sidebar ToC (View Mode) -->
+                    <div id="right-sidebar" class="hidden absolute right-0 top-0 bottom-0 z-40 flex transform translate-x-full transition-transform duration-300">
+                        <button onclick="toggleToC()" class="absolute -left-8 top-1/2 -translate-y-1/2 w-8 h-12 bg-gray-800 border border-gray-700 border-r-0 rounded-l-md flex items-center justify-center text-gray-400 hover:text-white shadow-lg focus:outline-none">
+                            <svg id="toc-arrow" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+                        <div class="w-64 bg-gray-800 border-l border-gray-700 h-full p-4 overflow-y-auto shadow-2xl">
+                            <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">Table of Contents</h3>
+                            <ul id="toc-list" class="space-y-2 text-sm text-gray-300">
+                                <!-- ToC items injected here -->
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graph View -->
+            <div id="view-graph" class="absolute inset-0 h-full w-full hidden bg-gray-950">
+                <div id="graph-container" class="w-full h-full"></div>
+            </div>
+            
+        </div>
+    </main>
+
+    <!-- App Modals -->
+    <div id="modal-how-to" class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full border border-gray-700 mx-4">
+            <h2 class="text-xl font-bold text-white mb-4">How to Use Noval</h2>
+            <ul class="text-gray-300 space-y-3 mb-6 list-disc pl-5 text-sm">
+                <li>Write your notes naturally. Highlight text and use the toolbar to change <strong>Font, Size, and Color</strong>.</li>
+                <li>Switch easily between <strong>Edit Mode</strong> and <strong>View Mode</strong> using the dropdown in the toolbar.</li>
+                <li>Link concepts together using double brackets: <code class="bg-gray-900 px-1 rounded text-blue-400">[[Ideas]]</code>. Select it or close the brackets to create a link instantly!</li>
+                <li>Switch to the <strong>Graph</strong> tab to explore your spiderweb map of connections.</li>
+            </ul>
+            <div class="flex justify-end">
+                <button onclick="closeModal('modal-how-to')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded transition">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-settings" class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full border border-gray-700 mx-4">
+            <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <svg class="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                Settings
+            </h2>
+            
+            <div class="space-y-4 mb-6">
+                <!-- Theme Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Theme</label>
+                    <select id="theme-select" onchange="changeTheme(this.value)" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-md py-2 px-3 focus:outline-none focus:border-blue-500 transition-colors">
+                        <option value="dark">Dark (Default)</option>
+                        <option value="light">Light</option>
+                        <option value="sepia">Sepia</option>
+                    </select>
+                </div>
+
+                <!-- Graph Mode Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Graph Link Indicator</label>
+                    <select id="graph-mode-select" onchange="changeGraphMode(this.value)" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-md py-2 px-3 focus:outline-none focus:border-blue-500 transition-colors">
+                        <option value="size">Increase Size (Default)</option>
+                        <option value="number">Show Number</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
+
+                <div class="border-t border-gray-700 my-4"></div>
+
+                <!-- Encryption Settings -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Security</label>
+                    <div id="encryption-status-ui" class="flex items-center justify-between bg-gray-900 border border-gray-700 rounded p-2 mb-2">
+                        <span id="encryption-status-text" class="text-sm text-gray-300 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                            Not Encrypted
+                        </span>
+                        <button id="encryption-toggle-btn" onclick="openEncryptionFlow()" class="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition">Enable</button>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-700 my-4"></div>
+
+                <!-- Data Management -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Data Management</label>
+                    <div class="flex gap-2">
+                        <button onclick="exportData()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 px-3 rounded text-sm transition flex justify-center items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Export
+                        </button>
+                        <button onclick="document.getElementById('import-file').click()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 px-3 rounded text-sm transition flex justify-center items-center gap-1">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            Import
+                        </button>
+                        <input type="file" id="import-file" class="hidden" accept=".json" onchange="importData(event)">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end">
+                <button onclick="closeModal('modal-settings')" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded transition">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Encryption Setup Modal -->
+    <div id="modal-setup-encryption" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[60]">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-2xl max-w-sm w-full border border-gray-700 mx-4">
+            <h2 class="text-xl font-bold text-white mb-4">Enable Encryption</h2>
+            <p class="text-gray-400 text-xs mb-4">Your database will be encrypted using AES-GCM 256-bit encryption. <strong class="text-red-400">If you forget this password, your data is permanently lost.</strong></p>
+            
+            <input type="password" id="enc-setup-pass1" placeholder="Enter new password" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-md py-2 px-3 focus:outline-none focus:border-blue-500 mb-3">
+            <input type="password" id="enc-setup-pass2" placeholder="Confirm password" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-md py-2 px-3 focus:outline-none focus:border-blue-500 mb-3">
+            
+            <p id="enc-setup-error" class="text-red-400 text-xs hidden mb-3">Passwords do not match.</p>
+
+            <div class="flex justify-end gap-2">
+                <button onclick="closeModal('modal-setup-encryption')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition text-sm">Cancel</button>
+                <button onclick="applyEncryption()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded transition text-sm">Encrypt Data</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Encryption Disable Modal -->
+    <div id="modal-disable-encryption" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[60]">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-2xl max-w-sm w-full border border-gray-700 mx-4">
+            <h2 class="text-xl font-bold text-white mb-4">Disable Encryption</h2>
+            <p class="text-gray-400 text-xs mb-4">Enter your current password to decrypt the database and remove protection.</p>
+            
+            <input type="password" id="enc-disable-pass" placeholder="Current password" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-md py-2 px-3 focus:outline-none focus:border-blue-500 mb-3">
+            <p id="enc-disable-error" class="text-red-400 text-xs hidden mb-3">Incorrect password.</p>
+
+            <div class="flex justify-end gap-2">
+                <button onclick="closeModal('modal-disable-encryption')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition text-sm">Cancel</button>
+                <button onclick="removeEncryption()" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded transition text-sm">Decrypt Data</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Startup Password Modal (Blocking) -->
+    <div id="modal-auth-startup" class="hidden fixed inset-0 bg-gray-900 flex items-center justify-center z-[100]">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-2xl max-w-sm w-full border border-gray-700 mx-4 text-center">
+            <svg class="w-12 h-12 text-blue-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            <h2 class="text-2xl font-bold text-white mb-2">Noval is Locked</h2>
+            <p class="text-gray-400 text-sm mb-6">Enter your password to decrypt your knowledge base.</p>
+            
+            <form onsubmit="handleStartupAuth(event)">
+                <input type="password" id="startup-pass" placeholder="Password" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-md py-3 px-4 focus:outline-none focus:border-blue-500 mb-3 text-center" autofocus>
+                <p id="startup-error" class="text-red-400 text-xs hidden mb-4">Incorrect password.</p>
+                <button type="submit" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium transition text-sm">Unlock</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="modal-about" class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-lg w-full border border-gray-700 mx-4 flex flex-col max-h-[80vh]">
+            <div class="flex justify-between items-center border-b border-gray-700 pb-3 mb-4 shrink-0">
+                <h2 class="text-xl font-bold text-white">About Noval</h2>
+                <div class="flex gap-2">
+                    <button id="tab-btn-about" onclick="switchAboutTab('about')" class="px-3 py-1 text-sm bg-gray-700 text-white rounded transition">About</button>
+                    <button id="tab-btn-license" onclick="switchAboutTab('license')" class="px-3 py-1 text-sm text-gray-400 hover:text-white rounded transition">License</button>
+                </div>
+            </div>
+            
+            <!-- About Tab -->
+            <div id="about-content-about" class="flex-1 overflow-y-auto mb-4 text-sm text-gray-300">
+                <p class="mb-3">Noval is an incredibly powerful, premium rich-text knowledge base running entirely inside your local web browser using a custom JSON Abstract Syntax Tree (AST) backend.</p>
+                <p class="mb-3">By combining advanced features like interactive mind-mapping, automatic bi-directional links, dynamic table of contents sidebar rendering, and secure on-device cryptographic locking, Noval gives you complete ownership over your intellectual thoughts.</p>
+                <p class="mt-4 text-gray-400 text-xs border-t border-gray-700 pt-3">All data remains completely on your local machine within IndexedDB. There are no tracking scripts, telemetry channels, or remote database synchronization. Your data belongs exclusively to you.</p>
+            </div>
+
+            <!-- License Tab -->
+            <div id="about-content-license" class="hidden flex-1 overflow-y-auto mb-4 text-xs text-gray-400 font-mono bg-gray-900 p-3 rounded border border-gray-700 leading-relaxed">
+                <p class="font-bold text-gray-200">MIT License</p>
+                <p class="mt-2 text-gray-300">Copyright (c) 2026 Noval</p>
+                <p class="mt-4">Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p>
+                <p class="mt-3">The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p>
+                <p class="mt-3">THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p>
+            </div>
+
+            <div class="flex justify-end shrink-0 border-t border-gray-700 pt-3">
+                <button onclick="closeModal('modal-about')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded transition">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Folder Edit Modal -->
+    <div id="modal-folder" class="hidden fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full border border-gray-700 mx-4">
+            <h2 class="text-xl font-bold text-white mb-4">Edit Folder</h2>
+            <input type="hidden" id="folder-id">
+            <div class="space-y-4 mb-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                    <input type="text" id="folder-name" class="w-full bg-gray-900 border border-gray-700 text-gray-100 rounded-md py-2 px-3 focus:outline-none focus:border-blue-500 transition-colors">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Graph Node Color</label>
+                    <div class="flex items-center gap-3">
+                        <input type="color" id="folder-color" oninput="document.getElementById('folder-color-hex').textContent = this.value" class="w-10 h-10 rounded border-0 bg-transparent cursor-pointer p-0">
+                        <span id="folder-color-hex" class="text-gray-400 text-sm font-mono uppercase"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-between items-center mt-6">
+                <button onclick="deleteFolder()" class="px-3 py-1.5 bg-red-900 bg-opacity-40 hover:bg-red-600 text-red-300 hover:text-white rounded text-sm transition">Delete Folder</button>
+                <div class="flex gap-2">
+                    <button onclick="closeModal('modal-folder')" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition">Cancel</button>
+                    <button onclick="saveFolderModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded transition">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* =========================================
+           INDEXEDDB WRAPPER FOR LOCAL STORAGE
+           ========================================= */
+        const DB_NAME = 'NovalKnowledgeBase';
+        const DB_VERSION = 4; // Upgraded for Encryption (settings store)
+        const STORE_NAME = 'notes';
+        const FOLDER_STORE = 'folders';
+        const SETTINGS_STORE = 'settings';
+        let db;
+
+        const initDB = () => new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = (e) => { console.error("IndexedDB error:", e); reject("Could not open database"); };
+            request.onupgradeneeded = (e) => {
+                const database = e.target.result;
+                if (!database.objectStoreNames.contains(STORE_NAME)) database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                if (!database.objectStoreNames.contains(FOLDER_STORE)) database.createObjectStore(FOLDER_STORE, { keyPath: 'id' });
+                if (!database.objectStoreNames.contains(SETTINGS_STORE)) database.createObjectStore(SETTINGS_STORE, { keyPath: 'id' });
+            };
+            request.onsuccess = (e) => { db = e.target.result; resolve(); };
+        });
+
+        const getSetting = (id) => new Promise((resolve, reject) => {
+            const tx = db.transaction(SETTINGS_STORE, 'readonly');
+            const request = tx.objectStore(SETTINGS_STORE).get(id);
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+        });
+        const saveSetting = (setting) => new Promise((resolve, reject) => {
+            const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+            const request = tx.objectStore(SETTINGS_STORE).put(setting);
+            request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+        });
+        const deleteSetting = (id) => new Promise((resolve, reject) => {
+            const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+            const request = tx.objectStore(SETTINGS_STORE).delete(id);
+            request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+        });
+
+        const getAllNotesRaw = () => new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const request = tx.objectStore(STORE_NAME).getAll();
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+        });
+        const saveNoteDBRaw = (note) => new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const request = tx.objectStore(STORE_NAME).put(note);
+            request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+        });
+        const deleteNoteDB = (id) => new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const request = tx.objectStore(STORE_NAME).delete(id);
+            request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+        });
+
+        const getAllFoldersRaw = () => new Promise((resolve, reject) => {
+            const tx = db.transaction(FOLDER_STORE, 'readonly');
+            const request = tx.objectStore(FOLDER_STORE).getAll();
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+        });
+        const saveFolderDBRaw = (folder) => new Promise((resolve, reject) => {
+            const tx = db.transaction(FOLDER_STORE, 'readwrite');
+            const request = tx.objectStore(FOLDER_STORE).put(folder);
+            request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+        });
+        const deleteFolderDB = (id) => new Promise((resolve, reject) => {
+            const tx = db.transaction(FOLDER_STORE, 'readwrite');
+            const request = tx.objectStore(FOLDER_STORE).delete(id);
+            request.onsuccess = () => resolve(); request.onerror = () => reject(request.error);
+        });
+
+        /* =========================================
+           ENCRYPTION ENGINE (Web Crypto API)
+           ========================================= */
+        let globalCryptoKey = null;
+
+        function bufferToBase64(buf) {
+            const bytes = new Uint8Array(buf);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+            return window.btoa(binary);
+        }
+        function base64ToBuffer(b64) {
+            const binary = window.atob(b64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            return bytes.buffer;
+        }
+
+        async function deriveKey(password, saltBuffer) {
+            const enc = new TextEncoder();
+            const keyMaterial = await window.crypto.subtle.importKey(
+                "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveBits", "deriveKey"]
+            );
+            return window.crypto.subtle.deriveKey(
+                { name: "PBKDF2", salt: saltBuffer, iterations: 100000, hash: "SHA-256" },
+                keyMaterial, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
+            );
+        }
+
+        async function encryptData(bufferToEncrypt, key) {
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const ciphertext = await window.crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv }, key, bufferToEncrypt
+            );
+            return { ciphertext, iv };
+        }
+
+        async function decryptData(ciphertext, iv, key) {
+            return window.crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: iv }, key, ciphertext
+            );
+        }
+
+        async function packData(obj) {
+            if (!globalCryptoKey) return obj;
+            const dataToEncrypt = JSON.stringify(obj);
+            const { ciphertext, iv } = await encryptData(new TextEncoder().encode(dataToEncrypt), globalCryptoKey);
+            return {
+                id: obj.id,
+                payload: bufferToBase64(ciphertext),
+                iv: bufferToBase64(iv)
+            };
+        }
+
+        async function unpackData(obj) {
+            if (obj.payload && obj.iv) {
+                if (!globalCryptoKey) throw new Error("Database is locked.");
+                try {
+                    const decrypted = await decryptData(base64ToBuffer(obj.payload), base64ToBuffer(obj.iv), globalCryptoKey);
+                    return JSON.parse(new TextDecoder().decode(decrypted));
+                } catch (e) {
+                    console.error("Decryption failed for object ID: " + obj.id);
+                    return null;
+                }
+            }
+            return obj;
+        }
+
+        async function getAllNotes() {
+            const raw = await getAllNotesRaw();
+            const unpacked = await Promise.all(raw.map(unpackData));
+            return unpacked.filter(n => n !== null);
+        }
+        async function saveNoteDB(note) { await saveNoteDBRaw(await packData(note)); }
+        
+        async function getAllFolders() {
+            const raw = await getAllFoldersRaw();
+            const unpacked = await Promise.all(raw.map(unpackData));
+            return unpacked.filter(f => f !== null);
+        }
+        async function saveFolderDB(folder) { await saveFolderDBRaw(await packData(folder)); }
+
+        /* =========================================
+           CUSTOM JSON AST ENGINE (DOM <-> JSON)
+           ========================================= */
+        function serializeDOM(node) {
+            if (node.nodeType === Node.TEXT_NODE) return { type: '#text', text: node.textContent };
+            if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+            const obj = { type: node.nodeName.toLowerCase(), style: {}, attributes: {}, children: [] };
+            
+            const stylesToKeep = ['color', 'fontSize', 'fontFamily', 'fontWeight', 'fontStyle', 'textDecoration', 'backgroundColor'];
+            stylesToKeep.forEach(s => { if (node.style[s]) obj.style[s] = node.style[s]; });
+
+            if (node.id) obj.attributes.id = node.id;
+            if (node.className) obj.attributes.class = node.className;
+            if (obj.type === 'a' && node.href) obj.attributes.href = node.href;
+            if (node.dataset && node.dataset.link) obj.attributes['data-link'] = node.dataset.link;
+
+            node.childNodes.forEach(child => { const serialized = serializeDOM(child); if (serialized) obj.children.push(serialized); });
+
+            if (Object.keys(obj.style).length === 0) delete obj.style;
+            if (Object.keys(obj.attributes).length === 0) delete obj.attributes;
+
+            return obj;
+        }
+
+        function deserializeDOM(obj) {
+            if (!obj) return document.createTextNode('');
+            if (obj.type === '#text') return document.createTextNode(obj.text || '');
+            
+            const el = document.createElement(obj.type || 'div');
+            
+            if (obj.style) { Object.keys(obj.style).forEach(k => el.style[k] = obj.style[k]); }
+            if (obj.attributes) {
+                Object.keys(obj.attributes).forEach(k => {
+                    if (k === 'class') el.className = obj.attributes[k];
+                    else if (k === 'id') el.id = obj.attributes[k];
+                    else if (k.startsWith('data-')) el.dataset[k.replace('data-', '')] = obj.attributes[k];
+                    else el.setAttribute(k, obj.attributes[k]);
+                });
+            }
+            if (obj.children) { obj.children.forEach(child => el.appendChild(deserializeDOM(child))); }
+            return el;
+        }
+
+        function extractLinksFromAST(obj, linksSet) {
+            if (!obj) return;
+            if (obj.type === 'a' && obj.attributes && obj.attributes['data-link']) {
+                linksSet.add({ target: obj.attributes['data-link'], original: obj.children?.[0]?.text || obj.attributes['data-link'] });
+            }
+            if (obj.children) { obj.children.forEach(c => extractLinksFromAST(c, linksSet)); }
+        }
+
+        function formatDoc(command, value = null) {
+            document.execCommand('styleWithCSS', false, true); document.execCommand(command, false, value);
+            elEditor.focus(); triggerSave(); updateToolbarState();
+        }
+
+        function formatFontSizePx(px) {
+            document.execCommand('styleWithCSS', false, true); document.execCommand('fontSize', false, '7');
+            const editor = document.getElementById('editor');
+            editor.querySelectorAll('font[size="7"]').forEach(f => { f.removeAttribute('size'); f.style.fontSize = px; });
+            editor.querySelectorAll('span[style*="xxx-large"]').forEach(s => { s.style.fontSize = px; });
+            elEditor.focus(); triggerSave(); updateToolbarState();
+        }
+
+        function updateToolbarState() {
+            if (currentEditorMode !== 'edit') return;
+            ['bold', 'italic', 'underline', 'strikeThrough'].forEach(cmd => {
+                const btn = document.getElementById('toolbar-' + cmd); if (!btn) return;
+                if (document.queryCommandState(cmd)) btn.classList.add('bg-gray-600', 'text-white');
+                else btn.classList.remove('bg-gray-600', 'text-white');
+            });
+
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                let node = selection.focusNode;
+                if (!node || !elEditor.contains(node)) return;
+                if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+                const style = window.getComputedStyle(node);
+                
+                const fontFamily = style.fontFamily.replace(/['"]/g, '').split(',')[0].trim();
+                const fontSelect = document.getElementById('toolbar-fontName');
+                for (let i = 0; i < fontSelect.options.length; i++) {
+                    if (fontSelect.options[i].value.toLowerCase() === fontFamily.toLowerCase()) { fontSelect.selectedIndex = i; break; }
+                }
+
+                const fontSize = style.fontSize; const sizeSelect = document.getElementById('toolbar-fontSize');
+                for (let i = 0; i < sizeSelect.options.length; i++) {
+                    if (sizeSelect.options[i].value === fontSize) { sizeSelect.selectedIndex = i; break; }
+                }
+
+                const color = style.color;
+                if (color.startsWith('rgb')) {
+                    const colorInput = document.getElementById('toolbar-foreColor');
+                    const rgb = color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                    if (rgb) {
+                        const hex = "#" + ("0" + parseInt(rgb[1], 10).toString(16)).slice(-2) + ("0" + parseInt(rgb[2], 10).toString(16)).slice(-2) + ("0" + parseInt(rgb[3], 10).toString(16)).slice(-2);
+                        colorInput.value = hex;
+                    }
+                }
+            }
+        }
+
+        /* =========================================
+           APPLICATION STATE & LOGIC
+           ========================================= */
+        let notes = []; let folders = [];
+        let currentNoteId = null; let saveTimeout = null; let network = null;
+        let currentEditorMode = 'edit'; let activeLinkElement = null; 
+        
+        let autocompleteState = { active: false, query: '', startNode: null, startOffset: 0, selectedIndex: 0, matches: [] };
+
+        const elNotesList = document.getElementById('notes-list');
+        const elNoteTitle = document.getElementById('note-title');
+        const elEditor = document.getElementById('editor');
+        const linkTooltip = document.getElementById('link-tooltip');
+
+        async function initApp() {
+            try {
+                loadSettings();
+                await initDB();
+
+                const encryptionMetadata = await getSetting('encryption_meta');
+                
+                if (encryptionMetadata) {
+                    document.getElementById('modal-auth-startup').classList.remove('hidden');
+                    updateEncryptionStatusUI(true);
+                } else {
+                    updateEncryptionStatusUI(false);
+                    await completeStartup();
+                }
+            } catch (err) { console.error("Initialization failed:", err); }
+        }
+
+        async function handleStartupAuth(event) {
+            event.preventDefault();
+            const pwd = document.getElementById('startup-pass').value;
+            const errEl = document.getElementById('startup-error');
+            
+            try {
+                const metadata = await getSetting('encryption_meta');
+                const salt = base64ToBuffer(metadata.salt);
+                const testKey = await deriveKey(pwd, salt);
+                
+                const decryptedAuth = await decryptData(
+                    base64ToBuffer(metadata.verifier),
+                    base64ToBuffer(metadata.verifierIv),
+                    testKey
+                );
+                
+                const authStr = new TextDecoder().decode(decryptedAuth);
+                if (authStr === 'noval-auth-check') {
+                    globalCryptoKey = testKey;
+                    document.getElementById('modal-auth-startup').classList.add('hidden');
+                    await completeStartup();
+                } else {
+                    errEl.classList.remove('hidden');
+                }
+            } catch (e) {
+                errEl.classList.remove('hidden');
+            }
+        }
+
+        async function completeStartup() {
+            notes = await getAllNotes();
+            folders = await getAllFolders();
+            
+            notes.forEach(note => {
+                if (typeof note.content === 'string') {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerText = note.content; 
+                    note.content = serializeDOM(tempDiv);
+                }
+            });
+
+            notes.sort((a, b) => b.updatedAt - a.updatedAt);
+
+            if (notes.length === 0) createDefaultNote();
+            else {
+                updateFolderSelect();
+                renderSidebar();
+                openNote(notes[0].id);
+            }
+        }
+
+        function createDefaultNote() {
+            const defaultContent = {
+                type: "div", children: [
+                    { type: "h1", children: [{ type: "#text", text: "Welcome to Noval 🪐" }] },
+                    { type: "div", children: [{ type: "#text", text: "This is your new rich-text knowledge base." }] },
+                    { type: "div", children: [{ type: "br" }] },
+                    { type: "div", children: [{ type: "#text", text: "Highlight this text and use the toolbar above to change its " }, { type: "span", style: { color: "#ef4444", fontWeight: "bold" }, children: [{ type: "#text", text: "color" }] }, { type: "#text", text: " and " }, { type: "span", style: { fontSize: "32px" }, children: [{ type: "#text", text: "size" }] }, { type: "#text", text: "." }] },
+                    { type: "div", children: [{ type: "br" }] },
+                    { type: "div", children: [{ type: "#text", text: "Type [[ and the name of a page to create an automatic, clickable " }, { type: "a", attributes: { "data-link": "Wiki Link", "href": "#" }, children: [{ type: "#text", text: "[[Wiki Link]]" }] }, { type: "#text", text: "."}] }
+                ]
+            };
+            const defaultNote = { id: Date.now().toString(), title: "Welcome to Noval", folderId: null, content: defaultContent, updatedAt: Date.now() };
+            notes.push(defaultNote); saveNoteDB(defaultNote);
+            updateFolderSelect(); renderSidebar(); openNote(defaultNote.id);
+        }
+
+        function renderSidebar(filterText = '') {
+            elNotesList.innerHTML = '';
+            
+            const sortedNotes = [...notes].sort((a, b) => {
+                const aPinned = !!a.pinned; const bPinned = !!b.pinned;
+                if (aPinned && !bPinned) return -1; if (!aPinned && bPinned) return 1;
+                return b.updatedAt - a.updatedAt;
+            });
+            
+            const createNoteItem = (note) => {
+                const li = document.createElement('li');
+                const isSelected = note.id === currentNoteId; const isPinned = !!note.pinned;
+                li.className = `group flex items-center justify-between px-3 py-1.5 rounded-md cursor-pointer transition-colors text-sm border-l-2 ${isSelected ? 'bg-blue-600 text-white border-blue-400' : 'text-gray-300 hover:bg-gray-700 hover:text-white border-transparent'}`;
+                li.draggable = true;
+                li.ondragstart = (e) => { e.dataTransfer.setData('text/plain', note.id); e.currentTarget.classList.add('opacity-50'); };
+                li.ondragend = (e) => { e.currentTarget.classList.remove('opacity-50'); };
+                li.onclick = (e) => { e.stopPropagation(); openNote(note.id); if (window.innerWidth < 768) toggleSidebar(); };
+
+                const titleSpan = document.createElement('span');
+                titleSpan.className = 'truncate flex-1'; titleSpan.textContent = note.title || 'Untitled Note';
+
+                const pinBtn = document.createElement('button');
+                pinBtn.className = `ml-2 p-0.5 rounded transition-opacity flex-shrink-0 ${isPinned ? (isSelected ? 'text-white opacity-100' : 'text-blue-400 opacity-100') : 'text-gray-500 opacity-0 group-hover:opacity-100 hover:text-gray-300'}`;
+                pinBtn.innerHTML = `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="${isPinned ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>`;
+                
+                pinBtn.onclick = async (e) => { e.stopPropagation(); note.pinned = !note.pinned; await saveNoteDB(note); renderSidebar(document.getElementById('search-input').value); };
+
+                li.appendChild(titleSpan); li.appendChild(pinBtn); return li;
+            };
+
+            const notesByFolder = { unassigned: [] };
+            folders.forEach(f => notesByFolder[f.id] = []);
+            
+            sortedNotes.forEach(note => {
+                if (filterText && !note.title.toLowerCase().includes(filterText.toLowerCase())) return;
+                if (note.folderId && notesByFolder[note.folderId]) notesByFolder[note.folderId].push(note);
+                else notesByFolder.unassigned.push(note);
+            });
+
+            folders.forEach(folder => {
+                const folderWrapper = document.createElement('div'); folderWrapper.className = 'mb-3';
+                folderWrapper.ondragover = (e) => { e.preventDefault(); folderWrapper.classList.add('bg-gray-700', 'bg-opacity-50', 'rounded'); };
+                folderWrapper.ondragleave = () => { folderWrapper.classList.remove('bg-gray-700', 'bg-opacity-50', 'rounded'); };
+                folderWrapper.ondrop = (e) => handleDropOnFolder(e, folder.id, folderWrapper);
+
+                const folderHeader = document.createElement('div');
+                folderHeader.className = 'flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 px-2 group';
+                folderHeader.innerHTML = `<span class="flex items-center gap-1.5 truncate"><span class="w-2.5 h-2.5 rounded-full inline-block" style="background-color: ${folder.color}"></span> ${folder.name}</span>`;
+                
+                const editBtn = document.createElement('button');
+                editBtn.className = 'hidden group-hover:block text-gray-400 hover:text-white p-0.5';
+                editBtn.innerHTML = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>`;
+                editBtn.onclick = () => openFolderModal(folder.id);
+                
+                folderHeader.appendChild(editBtn); folderWrapper.appendChild(folderHeader);
+
+                const ul = document.createElement('ul'); ul.className = 'space-y-0.5 ml-2 border-l border-gray-700 pl-2';
+                notesByFolder[folder.id].forEach(note => ul.appendChild(createNoteItem(note)));
+                if (notesByFolder[folder.id].length === 0) ul.innerHTML = `<li class="text-xs text-gray-600 italic px-3 py-1">Empty folder</li>`;
+                
+                folderWrapper.appendChild(ul); elNotesList.appendChild(folderWrapper);
+            });
+
+            if (notesByFolder.unassigned.length > 0 || folders.length > 0) {
+                const unassignedWrapper = document.createElement('div');
+                unassignedWrapper.ondragover = (e) => { e.preventDefault(); unassignedWrapper.classList.add('bg-gray-700', 'bg-opacity-50', 'rounded'); };
+                unassignedWrapper.ondragleave = () => { unassignedWrapper.classList.remove('bg-gray-700', 'bg-opacity-50', 'rounded'); };
+                unassignedWrapper.ondrop = (e) => handleDropOnFolder(e, null, unassignedWrapper);
+
+                if (folders.length > 0) unassignedWrapper.innerHTML = `<div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 px-2 mt-4">Uncategorized</div>`;
+                const ul = document.createElement('ul'); ul.className = 'space-y-0.5';
+                notesByFolder.unassigned.forEach(note => ul.appendChild(createNoteItem(note)));
+                unassignedWrapper.appendChild(ul); elNotesList.appendChild(unassignedWrapper);
+            }
+        }
+
+        async function handleDropOnFolder(e, folderId, element) {
+            e.preventDefault(); element.classList.remove('bg-gray-700', 'bg-opacity-50', 'rounded');
+            const noteId = e.dataTransfer.getData('text/plain'); if (!noteId) return;
+
+            const note = notes.find(n => n.id === noteId);
+            if (note && note.folderId !== folderId) {
+                note.folderId = folderId; await saveNoteDB(note);
+                if (currentNoteId === noteId) document.getElementById('note-folder-select').value = folderId || '';
+                renderSidebar(); if (!document.getElementById('view-graph').classList.contains('hidden')) renderGraph();
+            }
+        }
+
+        function filterNotes() { renderSidebar(document.getElementById('search-input').value); }
+
+        function updateFolderSelect() {
+            const select = document.getElementById('note-folder-select');
+            select.innerHTML = '<option value="">No Folder</option>';
+            folders.forEach(f => { const opt = document.createElement('option'); opt.value = f.id; opt.textContent = f.name; select.appendChild(opt); });
+            if (currentNoteId) { const currentNote = notes.find(n => n.id === currentNoteId); if (currentNote) select.value = currentNote.folderId || ''; }
+        }
+
+        async function createNewFolder() {
+            const newFolder = { id: 'folder_' + Date.now().toString(), name: "New Folder", color: "#8b5cf6" };
+            folders.push(newFolder); await saveFolderDB(newFolder); updateFolderSelect(); renderSidebar(); openFolderModal(newFolder.id);
+        }
+
+        function openFolderModal(folderId) {
+            const folder = folders.find(f => f.id === folderId); if (!folder) return;
+            document.getElementById('folder-id').value = folder.id; document.getElementById('folder-name').value = folder.name;
+            document.getElementById('folder-color').value = folder.color; document.getElementById('folder-color-hex').textContent = folder.color.toUpperCase();
+            openModal('modal-folder');
+        }
+
+        async function saveFolderModal() {
+            const id = document.getElementById('folder-id').value; const folderIndex = folders.findIndex(f => f.id === id); if (folderIndex === -1) return;
+            folders[folderIndex].name = document.getElementById('folder-name').value.trim() || 'Untitled Folder';
+            folders[folderIndex].color = document.getElementById('folder-color').value;
+            await saveFolderDB(folders[folderIndex]); closeModal('modal-folder'); updateFolderSelect(); renderSidebar();
+            if (!document.getElementById('view-graph').classList.contains('hidden')) renderGraph();
+        }
+
+        async function deleteFolder() {
+            const id = document.getElementById('folder-id').value;
+            const confirmDelete = await customConfirm("Are you sure you want to delete this folder? (Notes inside will NOT be deleted)");
+            if (!confirmDelete) return;
+            await deleteFolderDB(id); folders = folders.filter(f => f.id !== id);
+            for (let note of notes) { if (note.folderId === id) { note.folderId = null; await saveNoteDB(note); } }
+            closeModal('modal-folder'); updateFolderSelect(); renderSidebar(); if (!document.getElementById('view-graph').classList.contains('hidden')) renderGraph();
+        }
+
+        async function createNewNote(title = "Untitled Note") {
+            const newNote = {
+                id: Date.now().toString(), title: title, folderId: document.getElementById('note-folder-select').value || null,
+                content: { type: 'div', children: [{ type: 'h1', children: [{ type: '#text', text: title }] }] }, updatedAt: Date.now()
+            };
+            notes.push(newNote); await saveNoteDB(newNote); document.getElementById('search-input').value = '';
+            renderSidebar(); openNote(newNote.id); switchView('edit');
+        }
+
+        function openNote(id) {
+            currentNoteId = id; const note = notes.find(n => n.id === id); if (!note) return;
+            elNoteTitle.value = note.title;
+            elEditor.innerHTML = ''; elEditor.appendChild(deserializeDOM(note.content));
+            document.getElementById('note-folder-select').value = note.folderId || '';
+            renderSidebar(); closeAutocomplete(); linkTooltip.classList.add('hidden');
+            updateToolbarState();
+        }
+
+        function handleEditorInput() { triggerSave(); checkAutocomplete(); }
+        
+        function handleEditorClick(e) {
+            closeAutocomplete();
+            const link = e.target.closest('a[data-link]');
+            if (link) {
+                if (currentEditorMode === 'view') {
+                    handleWikiLink(link.dataset.link);
+                } else {
+                    activeLinkElement = link;
+                    document.getElementById('link-tooltip-title').textContent = link.dataset.link;
+                    const editorRect = elEditor.getBoundingClientRect();
+                    const linkRect = link.getBoundingClientRect();
+                    linkTooltip.style.top = (linkRect.bottom - editorRect.top + elEditor.scrollTop + 5) + 'px';
+                    linkTooltip.style.left = (linkRect.left - editorRect.left + elEditor.scrollLeft) + 'px';
+                    linkTooltip.classList.remove('hidden');
+                }
+            } else { linkTooltip.classList.add('hidden'); }
+            updateToolbarState();
+        }
+
+        function toggleEditorMode(mode) {
+            currentEditorMode = mode;
+            const toolbar = document.getElementById('formatting-tools');
+            const rightSidebar = document.getElementById('right-sidebar');
+            
+            if (mode === 'view') {
+                elEditor.setAttribute('contenteditable', 'false'); toolbar.classList.add('toolbar-disabled'); linkTooltip.classList.add('hidden');
+                rightSidebar.classList.remove('hidden'); generateToC();
+            } else {
+                elEditor.setAttribute('contenteditable', 'true'); toolbar.classList.remove('toolbar-disabled');
+                rightSidebar.classList.add('hidden'); rightSidebar.classList.add('translate-x-full');
+                document.getElementById('toc-arrow').innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>';
+            }
+        }
+
+        function triggerSave() { clearTimeout(saveTimeout); saveTimeout = setTimeout(saveCurrentNote, 500); }
+
+        async function saveCurrentNote() {
+            if (!currentNoteId) return; const noteIndex = notes.findIndex(n => n.id === currentNoteId); if (noteIndex === -1) return;
+            notes[noteIndex].title = elNoteTitle.value;
+            notes[noteIndex].content = serializeDOM(elEditor); 
+            notes[noteIndex].folderId = document.getElementById('note-folder-select').value || null;
+            notes[noteIndex].updatedAt = Date.now();
+            await saveNoteDB(notes[noteIndex]); renderSidebar(document.getElementById('search-input').value);
+        }
+
+        async function deleteCurrentNote() {
+            if (!currentNoteId) return;
+            const confirmDelete = await customConfirm("Are you sure you want to delete this note?");
+            if (!confirmDelete) return;
+            await deleteNoteDB(currentNoteId); notes = notes.filter(n => n.id !== currentNoteId);
+            if (notes.length > 0) openNote(notes[0].id); else createDefaultNote();
+        }
+
+        function customConfirm(message) {
+            return new Promise((resolve) => {
+                const overlay = document.createElement('div'); overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                const box = document.createElement('div'); box.className = 'bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full border border-gray-700';
+                box.innerHTML = `<p class="text-gray-200 mb-6 text-center">${message}</p>
+                    <div class="flex justify-end gap-3"><button id="alert-cancel" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition">Cancel</button><button id="alert-ok" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded transition">Delete</button></div>`;
+                overlay.appendChild(box); document.body.appendChild(overlay);
+                document.getElementById('alert-cancel').onclick = () => { document.body.removeChild(overlay); resolve(false); };
+                document.getElementById('alert-ok').onclick = () => { document.body.removeChild(overlay); resolve(true); };
+            });
+        }
+
+        /* =========================================
+           TABLE OF CONTENTS (RIGHT SIDEBAR)
+           ========================================= */
+        function toggleToC() {
+            const sidebar = document.getElementById('right-sidebar'); const arrow = document.getElementById('toc-arrow');
+            if (sidebar.classList.contains('translate-x-full')) {
+                sidebar.classList.remove('translate-x-full'); arrow.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>';
+            } else {
+                sidebar.classList.add('translate-x-full'); arrow.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>';
+            }
+        }
+
+        function generateToC() {
+            const headings = elEditor.querySelectorAll('h1, h2');
+            const tocList = document.getElementById('toc-list');
+            tocList.innerHTML = '';
+            
+            if (headings.length === 0) {
+                tocList.innerHTML = '<li class="text-gray-500 italic text-xs">No headings found.</li>';
+                return;
+            }
+
+            let needsSave = false;
+            headings.forEach((heading, index) => {
+                if (!heading.id) { heading.id = 'heading-' + Date.now() + '-' + index; needsSave = true; }
+
+                const li = document.createElement('li');
+                const a = document.createElement('a');
+                a.textContent = heading.textContent || (heading.tagName === 'H1' ? 'Untitled H1' : 'Untitled H2');
+                a.href = '#' + heading.id;
+                a.className = 'hover:text-blue-400 transition-colors cursor-pointer block truncate';
+                
+                if (heading.tagName === 'H2') li.className = 'ml-4 text-xs text-gray-400'; else li.className = 'font-medium mt-2 text-sm text-gray-200';
+                
+                a.onclick = (e) => { e.preventDefault(); heading.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+                li.appendChild(a); tocList.appendChild(li);
+            });
+            if (needsSave) triggerSave();
+        }
+
+        /* =========================================
+           LINKS & NAVIGATION API
+           ========================================= */
+        function handleWikiLink(targetTitle) {
+            const targetTitleLower = targetTitle.toLowerCase().trim();
+            const existingNote = notes.find(n => n.title.toLowerCase().trim() === targetTitleLower);
+            if (existingNote) openNote(existingNote.id); else createNewNote(targetTitle);
+        }
+
+        function navigateTooltipLink() { if (activeLinkElement) handleWikiLink(activeLinkElement.dataset.link); }
+
+        function unlinkTooltipLink() {
+            if (activeLinkElement) {
+                const textNode = document.createTextNode(activeLinkElement.textContent);
+                activeLinkElement.parentNode.replaceChild(textNode, activeLinkElement);
+                linkTooltip.classList.add('hidden'); triggerSave();
+            }
+        }
+
+        function insertStyledLinkElement(title) {
+            const html = `<a href="#" data-link="${title}">[[${title}]]</a>&#8203;`; 
+            document.execCommand('insertHTML', false, html);
+        }
+
+        /* =========================================
+           AUTOCOMPLETE WIKI LINKS
+           ========================================= */
+        elEditor.addEventListener('mouseup', updateToolbarState);
+
+        elEditor.addEventListener('keydown', function(e) {
+            if (autocompleteState.active) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); autocompleteState.selectedIndex = (autocompleteState.selectedIndex + 1) % autocompleteState.matches.length; renderAutocomplete(); } 
+                else if (e.key === 'ArrowUp') { e.preventDefault(); autocompleteState.selectedIndex = (autocompleteState.selectedIndex - 1 + autocompleteState.matches.length) % autocompleteState.matches.length; renderAutocomplete(); } 
+                else if (e.key === 'Enter') { e.preventDefault(); selectAutocomplete(); } 
+                else if (e.key === 'Escape') { closeAutocomplete(); }
+                return; 
+            }
+        });
+
+        elEditor.addEventListener('keyup', function(e) {
+            if (e.key === ']') {
+                const selection = window.getSelection(); if (!selection.rangeCount) return;
+                const node = selection.focusNode;
+                if (node && node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent.substring(0, selection.focusOffset);
+                    const match = text.match(/\[\[(.*?)\]\]$/);
+                    if (match) {
+                        const title = match[1];
+                        const range = document.createRange();
+                        range.setStart(node, selection.focusOffset - match[0].length);
+                        range.setEnd(node, selection.focusOffset);
+                        selection.removeAllRanges(); selection.addRange(range);
+                        insertStyledLinkElement(title); triggerSave();
+                    }
+                }
+            }
+            updateToolbarState();
+        });
+
+        function checkAutocomplete() {
+            const selection = window.getSelection(); if (!selection.rangeCount) return;
+            const range = selection.getRangeAt(0); const node = range.startContainer;
+            
+            if (node.nodeType === Node.TEXT_NODE) {
+                const textToCursor = node.textContent.substring(0, range.startOffset);
+                const match = textToCursor.match(/\[\[([^\]\[]*)$/);
+                if (match) {
+                    const query = match[1];
+                    const matches = notes.filter(n => n.title.toLowerCase().includes(query.toLowerCase()));
+                    if (matches.length > 0) {
+                        autocompleteState.active = true; autocompleteState.query = query;
+                        autocompleteState.startNode = node; autocompleteState.startOffset = match.index; 
+                        autocompleteState.matches = matches; autocompleteState.selectedIndex = Math.max(0, Math.min(autocompleteState.selectedIndex, matches.length - 1));
+                        showAutocomplete(range); return;
+                    }
+                }
+            }
+            closeAutocomplete();
+        }
+
+        function showAutocomplete(range) {
+            const menu = document.getElementById('autocomplete-menu'); renderAutocomplete();
+            const rect = range.getBoundingClientRect(); const editorRect = elEditor.getBoundingClientRect();
+            menu.style.top = (rect.bottom - editorRect.top + elEditor.scrollTop + 5) + 'px'; 
+            menu.style.left = Math.min(rect.left - editorRect.left + elEditor.scrollLeft, elEditor.clientWidth - 260) + 'px'; 
+            menu.classList.remove('hidden');
+        }
+
+        function renderAutocomplete() {
+            const menu = document.getElementById('autocomplete-menu'); menu.innerHTML = '';
+            autocompleteState.matches.forEach((note, index) => {
+                const li = document.createElement('li');
+                li.className = `px-3 py-2 cursor-pointer border-b border-gray-700 truncate ${index === autocompleteState.selectedIndex ? 'bg-blue-600 text-white' : 'hover:bg-gray-700'}`;
+                li.textContent = note.title;
+                li.onmousedown = (e) => { e.preventDefault(); autocompleteState.selectedIndex = index; selectAutocomplete(); };
+                menu.appendChild(li);
+            });
+            const selectedItem = menu.children[autocompleteState.selectedIndex];
+            if (selectedItem) selectedItem.scrollIntoView({ block: 'nearest' });
+        }
+
+        function closeAutocomplete() { autocompleteState.active = false; document.getElementById('autocomplete-menu').classList.add('hidden'); }
+
+        function selectAutocomplete() {
+            const selectedNote = autocompleteState.matches[autocompleteState.selectedIndex];
+            if (!selectedNote || !autocompleteState.startNode) return;
+
+            const selection = window.getSelection(); const range = document.createRange();
+            range.setStart(autocompleteState.startNode, autocompleteState.startOffset);
+            range.setEnd(autocompleteState.startNode, selection.getRangeAt(0).startOffset);
+            selection.removeAllRanges(); selection.addRange(range);
+            
+            insertStyledLinkElement(selectedNote.title);
+            closeAutocomplete(); triggerSave(); elEditor.focus();
+        }
+
+        /* =========================================
+           GRAPH VIEW (SPIDERWEB)
+           ========================================= */
+        function renderGraph() {
+            const container = document.getElementById('graph-container');
+            const style = getComputedStyle(document.documentElement);
+            const isCustomTheme = document.documentElement.hasAttribute('data-theme') && document.documentElement.getAttribute('data-theme') !== 'dark';
+            
+            const defaultNodeBg = isCustomTheme ? style.getPropertyValue('--graph-node-bg').trim() : '#2563eb';
+            const defaultNodeBorder = isCustomTheme ? style.getPropertyValue('--graph-node-border').trim() : '#1d4ed8';
+            const nodeText = isCustomTheme ? style.getPropertyValue('--graph-text').trim() : '#ffffff';
+            const ghostBg = isCustomTheme ? style.getPropertyValue('--graph-ghost-bg').trim() : '#4b5563';
+            const ghostText = isCustomTheme ? style.getPropertyValue('--graph-ghost-text').trim() : '#9ca3af';
+            const edgeColor = isCustomTheme ? style.getPropertyValue('--text-400').trim() : 'rgba(156, 163, 175, 0.5)';
+
+            const graphMode = localStorage.getItem('noval_graph_mode') || 'size';
+
+            const nodesData = []; const edgesData = [];
+            const addedNodes = new Set(); const existingTitles = new Map();
+            const outgoingCounts = new Map(); const ghostLabels = new Map();
+
+            notes.forEach(note => {
+                const sourceTitle = note.title.trim();
+                if (!sourceTitle) return;
+                const sourceId = sourceTitle.toLowerCase();
+                existingTitles.set(sourceId, note);
+
+                const linksFound = new Set();
+                extractLinksFromAST(note.content, linksFound);
+
+                linksFound.forEach(linkInfo => {
+                    const targetId = linkInfo.target.toLowerCase();
+                    edgesData.push({ from: sourceId, to: targetId, color: { color: edgeColor }, arrows: 'to' });
+                    outgoingCounts.set(sourceId, (outgoingCounts.get(sourceId) || 0) + 1);
+                    if (!ghostLabels.has(targetId)) ghostLabels.set(targetId, linkInfo.original);
+                });
+            });
+
+            const applyGraphMode = (label, id, defaultSize) => {
+                let finalSize = defaultSize; const outgoing = outgoingCounts.get(id) || 0;
+                if (outgoing > 0) {
+                    if (graphMode === 'size') finalSize = defaultSize + (outgoing * 4); 
+                    else if (graphMode === 'number') finalSize = Math.max(defaultSize, 14); 
+                } return { label: label, size: finalSize }; 
+            };
+
+            notes.forEach(note => {
+                const originalTitle = note.title.trim();
+                if (!originalTitle) return;
+                const id = originalTitle.toLowerCase();
+                const folder = note.folderId ? folders.find(f => f.id === note.folderId) : null;
+                const nodeBg = folder ? folder.color : defaultNodeBg; const nodeBorder = folder ? folder.color : defaultNodeBorder;
+
+                if (!addedNodes.has(id)) {
+                    const { label, size } = applyGraphMode(originalTitle, id, 15);
+                    nodesData.push({ id: id, label: label, color: { background: nodeBg, border: nodeBorder }, font: { color: nodeText }, shape: 'dot', size: size, originalLabel: originalTitle });
+                    addedNodes.add(id);
+                }
+            });
+
+            edgesData.forEach(edge => {
+                const targetId = edge.to;
+                if (!addedNodes.has(targetId)) {
+                    const targetOriginal = ghostLabels.get(targetId) || targetId;
+                    const { label, size } = applyGraphMode(targetOriginal, targetId, 10);
+                    nodesData.push({ id: targetId, label: label, color: { background: ghostBg, border: ghostBg }, font: { color: ghostText }, shape: 'dot', size: size, originalLabel: targetOriginal });
+                    addedNodes.add(targetId);
+                }
+            });
+
+            const options = {
+                physics: { barnesHut: { gravitationalConstant: -2000, centralGravity: 0.1, springLength: 150, springConstant: 0.04, damping: 0.09 }, stabilization: { iterations: 100 } },
+                interaction: { hover: true, zoomView: true, dragView: true }
+            };
+
+            if(network !== null) { network.destroy(); network = null; }
+            network = new vis.Network(container, { nodes: new vis.DataSet(nodesData), edges: new vis.DataSet(edgesData) }, options);
+
+            network.on("doubleClick", function (params) {
+                if (params.nodes.length > 0) {
+                    const nodeObj = nodesData.find(n => n.id === params.nodes[0]);
+                    if (nodeObj) handleWikiLink(nodeObj.originalLabel); 
+                }
+            });
+
+            network.on("afterDrawing", function (ctx) {
+                if (graphMode !== 'number') return;
+                const positions = network.getPositions();
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = 'bold 12px sans-serif';
+                nodesData.forEach(node => {
+                    const outgoing = outgoingCounts.get(node.id) || 0;
+                    if (outgoing > 0 && positions[node.id]) {
+                        ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)'; ctx.lineWidth = 2.5;
+                        ctx.strokeText(outgoing.toString(), positions[node.id].x, positions[node.id].y);
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillText(outgoing.toString(), positions[node.id].x, positions[node.id].y);
+                    }
+                });
+            });
+        }
+
+        /* =========================================
+           UI HELPERS, MODALS & TABS
+           ========================================= */
+        function toggleMenu() { document.getElementById('dropdown-menu').classList.toggle('hidden'); }
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); document.getElementById('dropdown-menu').classList.add('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        
+        document.addEventListener('click', function(event) {
+            const menuBtn = document.getElementById('menu-btn'); const dropdown = document.getElementById('dropdown-menu');
+            if (menuBtn && dropdown && !menuBtn.contains(event.target) && !dropdown.contains(event.target)) dropdown.classList.add('hidden');
+        });
+
+        function switchView(view) {
+            document.getElementById('view-edit').classList.add('hidden'); document.getElementById('view-graph').classList.add('hidden');
+            ['btn-edit', 'btn-graph'].forEach(id => { document.getElementById(id).className = 'px-3 py-1.5 text-sm rounded-md text-gray-400 hover:text-gray-200 transition-colors flex items-center gap-1'; });
+            document.getElementById(`view-${view}`).classList.remove('hidden');
+            document.getElementById(`btn-${view}`).className = 'px-3 py-1.5 text-sm rounded-md bg-gray-700 text-gray-100 font-medium transition-colors flex items-center gap-1';
+            if (view === 'graph') { saveCurrentNote().then(() => renderGraph()); } else if (view === 'edit') { elEditor.focus(); }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar.classList.contains('-translate-x-full')) sidebar.classList.remove('-translate-x-full'); else sidebar.classList.add('-translate-x-full');
+        }
+
+        function switchAboutTab(tab) {
+            const aboutContent = document.getElementById('about-content-about');
+            const licenseContent = document.getElementById('about-content-license');
+            const aboutBtn = document.getElementById('tab-btn-about');
+            const licenseBtn = document.getElementById('tab-btn-license');
+
+            if (tab === 'about') {
+                aboutContent.classList.remove('hidden');
+                licenseContent.classList.add('hidden');
+                aboutBtn.className = "px-3 py-1 text-sm bg-gray-700 text-white rounded transition";
+                licenseBtn.className = "px-3 py-1 text-sm text-gray-400 hover:text-white rounded transition";
+            } else {
+                aboutContent.classList.add('hidden');
+                licenseContent.classList.remove('hidden');
+                aboutBtn.className = "px-3 py-1 text-sm text-gray-400 hover:text-white rounded transition";
+                licenseBtn.className = "px-3 py-1 text-sm bg-gray-700 text-white rounded transition";
+            }
+        }
+
+        /* =========================================
+           SETTINGS, ENCRYPTION FLOW, & DATA BACKUPS
+           ========================================= */
+        function loadSettings() {
+            const savedTheme = localStorage.getItem('noval_theme') || 'dark'; document.documentElement.setAttribute('data-theme', savedTheme);
+            const themeSelect = document.getElementById('theme-select'); if (themeSelect) themeSelect.value = savedTheme;
+            const savedGraphMode = localStorage.getItem('noval_graph_mode') || 'size';
+            const graphModeSelect = document.getElementById('graph-mode-select'); if (graphModeSelect) graphModeSelect.value = savedGraphMode;
+        }
+
+        function changeTheme(theme) { document.documentElement.setAttribute('data-theme', theme); localStorage.setItem('noval_theme', theme); if (!document.getElementById('view-graph').classList.contains('hidden')) renderGraph(); }
+        function changeGraphMode(mode) { localStorage.setItem('noval_graph_mode', mode); if (!document.getElementById('view-graph').classList.contains('hidden')) renderGraph(); }
+
+        function updateEncryptionStatusUI(isEncrypted) {
+            const textEl = document.getElementById('encryption-status-text');
+            const btnEl = document.getElementById('encryption-toggle-btn');
+            if (isEncrypted) {
+                textEl.innerHTML = `<svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg> Encrypted`;
+                btnEl.textContent = "Disable";
+            } else {
+                textEl.innerHTML = `<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg> Not Encrypted`;
+                btnEl.textContent = "Enable";
+            }
+        }
+
+        function openEncryptionFlow() {
+            if (globalCryptoKey) {
+                document.getElementById('enc-disable-pass').value = '';
+                document.getElementById('enc-disable-error').classList.add('hidden');
+                openModal('modal-disable-encryption');
+            } else {
+                document.getElementById('enc-setup-pass1').value = '';
+                document.getElementById('enc-setup-pass2').value = '';
+                document.getElementById('enc-setup-error').classList.add('hidden');
+                openModal('modal-setup-encryption');
+            }
+        }
+
+        async function applyEncryption() {
+            const p1 = document.getElementById('enc-setup-pass1').value;
+            const p2 = document.getElementById('enc-setup-pass2').value;
+            const err = document.getElementById('enc-setup-error');
+            
+            if (p1.length < 4) { err.textContent = "Password must be at least 4 characters."; err.classList.remove('hidden'); return; }
+            if (p1 !== p2) { err.textContent = "Passwords do not match."; err.classList.remove('hidden'); return; }
+
+            try {
+                const salt = window.crypto.getRandomValues(new Uint8Array(16));
+                globalCryptoKey = await deriveKey(p1, salt);
+                
+                const authCheckData = new TextEncoder().encode('noval-auth-check');
+                const { ciphertext: verifierCT, iv: verifierIV } = await encryptData(authCheckData, globalCryptoKey);
+                
+                await saveSetting({
+                    id: 'encryption_meta',
+                    salt: bufferToBase64(salt),
+                    verifier: bufferToBase64(verifierCT),
+                    verifierIv: bufferToBase64(verifierIV)
+                });
+
+                for (let n of notes) await saveNoteDB(n);
+                for (let f of folders) await saveFolderDB(f);
+                
+                updateEncryptionStatusUI(true);
+                closeModal('modal-setup-encryption');
+            } catch (e) {
+                console.error(e);
+                err.textContent = "Error setting up encryption.";
+                err.classList.remove('hidden');
+            }
+        }
+
+        async function removeEncryption() {
+            const pwd = document.getElementById('enc-disable-pass').value;
+            const err = document.getElementById('enc-disable-error');
+            
+            try {
+                const metadata = await getSetting('encryption_meta');
+                const salt = base64ToBuffer(metadata.salt);
+                const testKey = await deriveKey(pwd, salt);
+                
+                const decryptedAuth = await decryptData(
+                    base64ToBuffer(metadata.verifier),
+                    base64ToBuffer(metadata.verifierIv),
+                    testKey
+                );
+                
+                const authStr = new TextDecoder().decode(decryptedAuth);
+                if (authStr !== 'noval-auth-check') throw new Error("Invalid");
+
+                globalCryptoKey = null;
+                await deleteSetting('encryption_meta');
+                
+                for (let n of notes) await saveNoteDB(n);
+                for (let f of folders) await saveFolderDB(f);
+
+                updateEncryptionStatusUI(false);
+                closeModal('modal-disable-encryption');
+            } catch (e) {
+                err.classList.remove('hidden');
+            }
+        }
+
+        async function exportData() {
+            const rawNotes = await getAllNotesRaw();
+            const rawFolders = await getAllFoldersRaw();
+            const encMeta = await getSetting('encryption_meta');
+            
+            const dataToExport = { notes: rawNotes, folders: rawFolders, encryption_meta: encMeta || null }; 
+            const dataStr = JSON.stringify(dataToExport, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+            const linkElement = document.createElement('a'); linkElement.setAttribute('href', dataUri); linkElement.setAttribute('download', 'noval_backup_' + new Date().toISOString().slice(0, 10) + '.json'); linkElement.click();
+        }
+
+        function importData(event) {
+            const file = event.target.files[0]; if (!file) return; const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result); 
+                    
+                    if (importedData.encryption_meta && !globalCryptoKey) {
+                        customAlert("You are trying to import an encrypted backup into an unlocked instance. Please handle manually for now to prevent data corruption.");
+                        return;
+                    }
+
+                    let importedNotes = []; let importedFolders = [];
+                    if (Array.isArray(importedData)) importedNotes = importedData; 
+                    else if (importedData.notes) { importedNotes = importedData.notes; importedFolders = importedData.folders || []; } 
+                    else throw new Error("Invalid backup format.");
+                    
+                    for (const f of importedFolders) {
+                        if (f.id && f.name) {
+                            const existingIdx = folders.findIndex(fold => fold.id === f.id);
+                            const unpacked = await unpackData(f);
+                            if (existingIdx !== -1) folders[existingIdx] = unpacked; else folders.push(unpacked);
+                            await saveFolderDBRaw(f);
+                        }
+                    }
+                    let importCount = 0;
+                    for (const note of importedNotes) {
+                        if (note.id) {
+                            const unpacked = await unpackData(note);
+                            if (unpacked) {
+                                const existingIdx = notes.findIndex(n => n.id === note.id);
+                                if (existingIdx !== -1) notes[existingIdx] = unpacked; else notes.push(unpacked);
+                                await saveNoteDBRaw(note); importCount++;
+                            }
+                        }
+                    }
+                    customAlert(`Successfully imported ${importCount} notes and ${importedFolders.length} folders!`);
+                    updateFolderSelect(); renderSidebar(); if (notes.length > 0) openNote(notes[0].id); if (!document.getElementById('view-graph').classList.contains('hidden')) renderGraph();
+                } catch (err) { customAlert("Error importing data. Make sure it matches your current encryption state."); console.error(err); }
+                event.target.value = '';
+            };
+            reader.readAsText(file); closeModal('modal-settings');
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+
+    </script>
+</body>
+</html>
